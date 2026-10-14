@@ -5,128 +5,91 @@
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-2.0-blue.svg)](https://spring.io/projects/spring-ai)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-API inteligente de controle financeiro e orçamento pessoal que integra o **Spring Boot** ao ecossistema do **Spring AI**. A aplicação é capaz de processar comandos de voz e texto, interpretar a intenção do usuário, invocar regras de negócio e persistência via **Tool Calling** (chamada de funções) e responder tanto em formato de áudio sintético (TTS) quanto em dados estruturados (JSON).
-
-Projeto desenvolvido com base no desafio prático da trilha Spring Boot da [Digital Innovation One (DIO)](https://github.com/digitalinnovationone/dio-spring-boot-learning-track), evoluído com novas ferramentas, validações de domínio, testes automatizados e arquitetura em camadas.
+Projeto desenvolvido para o desafio prático de **Spring Boot com Spring AI** da trilha backend da [Digital Innovation One (DIO)](https://github.com/digitalinnovationone/dio-spring-boot-learning-track).
 
 ---
 
-## 🎯 Fluxo de Funcionamento com IA
+## 📌 O que o projeto faz
 
-O ciclo completo de processamento de voz segue as seguintes etapas:
+Esta aplicação é uma **API de controle financeiro pessoal** que integra Inteligência Artificial Generativa para processar comandos de voz e texto. 
+
+Em vez de apenas responder perguntas de forma genérica, o sistema conecta a IA às regras de negócio e ao banco de dados da aplicação por meio de **Tool Calling** (chamada de métodos Java pelo modelo).
+
+### Fluxo ponta a ponta:
+1. O usuário envia um arquivo de áudio (ex: gravado no celular dizendo *"gastei 85 reais no supermercado comprando frutas"*);
+2. A API recebe o áudio e transcreve a fala em texto via **OpenAI Whisper**;
+3. O modelo de linguagem (**GPT-4o-mini**) analisa o texto, identifica a intenção e os valores, escolhe a categoria adequada e aciona a ferramenta Java correspondente (`persist-transaction`);
+4. A aplicação valida e salva a transação no banco de dados via JPA;
+5. A IA gera uma mensagem de confirmação contextualizada;
+6. O texto de retorno é convertido em fala (**OpenAI TTS**) e entregue de volta ao usuário como um arquivo de áudio `.mp3`.
+
+Também está disponível um canal de chat em texto (`POST /transactions/ai/chat`) para interação rápida via JSON, além dos endpoints REST convencionais.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Usuario as Usuário / Cliente
-    participant Controller as TransactionController
-    participant STT as TranscriptionModel (Whisper)
-    participant LLM as ChatClient (GPT-4o-mini)
-    participant Tools as Application Use Cases (@Tool)
-    participant DB as Banco de Dados (JPA)
-    participant TTS as TextToSpeechModel (OpenAI TTS)
+    actor Usuario as Usuário
+    participant API as TransactionController
+    participant STT as Whisper (Áudio para Texto)
+    participant LLM as Spring AI ChatClient
+    participant Tool as Tools / Use Cases Java
+    participant DB as Banco de Dados
+    participant TTS as TTS (Texto para Áudio)
 
-    Usuario->>Controller: Envia arquivo de áudio (.m4a, .mp3, .wav)
-    Controller->>STT: Transcreve o áudio em texto
-    STT-->>Controller: Texto transcrito (ex: "gastei 80 reais na farmácia")
-    Controller->>LLM: Envia texto com System Prompt e Tools registradas
-    LLM->>Tools: Invoca ferramenta correspondente (@Tool persist-transaction)
-    Tools->>DB: Salva a transação com categoria e valor validados
-    DB-->>Tools: Transação persistida
-    Tools-->>LLM: Retorno da execução da ferramenta
-    LLM-->>Controller: Resposta contextualizada em texto
-    Controller->>TTS: Converte a resposta em áudio sintetizado
-    TTS-->>Controller: Buffer de áudio (MP3)
-    Controller-->>Usuario: Retorna o arquivo de áudio como resposta
+    Usuario->>API: Envia áudio (.m4a / .mp3)
+    API->>STT: Transcreve voz em texto
+    STT-->>API: "Gastei 50 reais no almoço"
+    API->>LLM: Processa comando com System Prompt
+    LLM->>Tool: Invoca @Tool persist-transaction(almoço, 50, GROCERIES)
+    Tool->>DB: Salva registro com validações
+    DB-->>Tool: Confirmado
+    Tool-->>LLM: Sucesso na persistência
+    LLM-->>API: "Registrei seu gasto de R$ 50,00 na categoria Alimentação."
+    API->>TTS: Converte texto em voz
+    TTS-->>API: Arquivo de áudio binário
+    API-->>Usuario: Retorna resposta em MP3
 ```
 
 ---
 
-## 🏗️ Arquitetura do Projeto
-
-O projeto adota os princípios de **Clean Architecture** e **DDD**, garantindo baixo acoplamento entre regras de negócio e frameworks externos:
-
-```text
-src/main/java/dio/budgeting/
-├── application/                    # Casos de uso e ferramentas (@Tool)
-│   ├── input/                      # DTOs de entrada dos use cases
-│   ├── output/                     # DTOs de saída dos use cases
-│   ├── GetBalanceSummaryUseCase.java
-│   ├── ListAllTransactionsUseCase.java
-│   ├── ListTransactionsByCategoryUseCase.java
-│   └── PersistTransactionUseCase.java
-├── domain/                         # Núcleo de domínio (regras puras)
-│   ├── Category.java               # Enum com categorias e descrições
-│   ├── Transaction.java            # Entidade de domínio com validações
-│   ├── TransactionId.java          # Value Object (UUID)
-│   └── TransactionRepository.java  # Contrato do repositório
-└── infrastructure/                 # Adaptadores e detalhes técnicos
-    ├── http/                       # Controllers REST, DTOs e Exception Handler
-    │   ├── exception/              # Tratamento global de erros
-    │   ├── request/                # DTOs de requisição REST
-    │   ├── response/               # DTOs de resposta REST
-    │   └── TransactionController.java
-    └── persistence/                # Implementação JPA e entidades
-        ├── entity/                 # Entidades relacionais
-        └── repository/             # Spring Data JPA e adaptadores
-```
-
----
-
-## 🛠️ Tecnologias Utilizadas
-
-- **Java 25**
-- **Spring Boot 4**
-- **Spring AI (v2.0)**:
-  - `ChatClient` com suporte a Tool Calling
-  - `TranscriptionModel` (OpenAI Whisper)
-  - `TextToSpeechModel` (OpenAI TTS)
-- **Spring Data JPA** & **Hibernate**
-- **H2 Database** (para execução e testes imediatos sem dependências)
-- **MySQL 9** (suporte via Docker Compose)
-- **Lombok**
-- **JUnit 5**, **AssertJ** e **Mockito**
-
----
-
-## 🚀 Como Executar
+## 🚀 Como executar a aplicação
 
 ### Pré-requisitos
-- JDK 25 instalado
-- Uma chave de API da OpenAI (`OPENAI_API_KEY`) caso deseje testar as chamadas reais aos modelos
+- **Java 25** instalado.
+- Chave de API da OpenAI (`OPENAI_API_KEY`) para usar os modelos de IA reais (transcrição, chat e voz).
 
-### 1. Clonar o repositório
+### 1. Obter o código
 ```bash
 git clone https://github.com/SEU-USUARIO/dio-spring-ai-budgeting.git
 cd dio-spring-ai-budgeting
 ```
 
-### 2. Configurar a chave de API (opcional para testes unitários)
-No terminal (PowerShell no Windows):
-```powershell
-$env:OPENAI_API_KEY="sk-proj-sua-chave-aqui"
-```
+### 2. Configurar a chave de API da OpenAI
+Defina a variável de ambiente no seu terminal:
 
-No Linux/macOS:
-```bash
-export OPENAI_API_KEY="sk-proj-sua-chave-aqui"
-```
+- **Windows (PowerShell):**
+  ```powershell
+  $env:OPENAI_API_KEY="sk-proj-sua-chave-aqui"
+  ```
+- **Linux / macOS:**
+  ```bash
+  export OPENAI_API_KEY="sk-proj-sua-chave-aqui"
+  ```
 
-> **Nota:** Se a variável não for informada, a aplicação sobe normalmente com a chave padrão de mock para testes e endpoints REST manuais.
+> Caso não defina a chave, a aplicação subirá normalmente com uma chave de fallback, permitindo rodar a suíte de testes unitários e testar os endpoints REST manuais.
 
-### 3. Rodar a aplicação
-O projeto já está pré-configurado com **banco H2 em memória**, permitindo rodar imediatamente sem precisar de banco externo:
+### 3. Executar o projeto
+O projeto já vem configurado com **banco H2 em memória por padrão**, portanto você não precisa instalar ou subir nenhum banco externo para começar:
 
 ```bash
 ./gradlew bootRun
 ```
+*(No Windows PowerShell: `.\gradlew.bat bootRun`)*
 
-*(No Windows cmd/powershell: `.\gradlew.bat bootRun`)*
-
-A aplicação estará disponível em `http://localhost:8080`.
+A API estará rodando em `http://localhost:8080`.
 
 #### (Opcional) Executar com MySQL via Docker Compose
-Se preferir usar o banco MySQL:
+Se preferir rodar com banco MySQL persistente em container:
 ```bash
 docker compose up -d
 ./gradlew bootRun --args='--spring.profiles.active=mysql'
@@ -134,98 +97,109 @@ docker compose up -d
 
 ---
 
-## 📡 Endpoints da API
+## ⭐ Melhorias implementadas em relação à base
 
-### 1. Processar comando de voz (Áudio ➔ IA ➔ Ação ➔ Áudio)
-Envia um áudio e recebe a resposta falada em formato MP3:
+Para além da estrutura construída durante as aulas, foram adicionadas as seguintes evoluções:
+
+1. **Novas ferramentas para o agente inteligente (Tool Calling):**
+   - `get-balance-summary`: ferramenta Java que calcula em tempo real o valor total gasto, o número de lançamentos, o agrupamento financeiro por categoria e aponta a categoria com maior volume de gastos.
+   - `list-all-transactions`: ferramenta que permite à IA consultar todo o histórico financeiro do usuário quando solicitada.
+
+2. **Endpoint de Chat textual (`POST /transactions/ai/chat`):**
+   - Permite conversar com a IA e acionar as ferramentas via JSON no Postman, cURL ou frontends web, sem obrigar o envio de arquivos de áudio em todos os testes.
+
+3. **Validações e regras de negócio no Domínio:**
+   - Validação de valores estritamente positivos (`amount > 0`) e descrição não vazia na entidade `Transaction`.
+   - Criação de um `GlobalExceptionHandler` (`@RestControllerAdvice`) que captura erros de validação e argumentos ilegais, retornando respostas HTTP 400 com JSON claro e padronizado.
+
+4. **Categorização semântica ampliada:**
+   - Adicionadas categorias como `LEISURE` (lazer/restaurantes), `UTILITIES` (contas residenciais), `EDUCATION` e `OTHER`, com descrições semânticas em português para orientar o modelo na classificação correta.
+
+5. **Suporte imediato a banco H2 em memória:**
+   - Configuração de fallback para H2, garantindo que qualquer desenvolvedor clone o repositório e execute a aplicação ou os testes no primeiro comando, sem barreiras de infraestrutura.
+
+6. **Cobertura completa de testes automatizados:**
+   - Testes unitários com **Mockito** e **AssertJ** para todos os Use Cases.
+   - Testes de integração HTTP com **MockMvc** validando status codes e tratamento de erros.
+
+---
+
+## 🛠️ Tecnologias utilizadas
+
+- **Java 25 (LTS)**: versão mais recente com novos recursos da linguagem.
+- **Spring Boot 4.0**: base do ecossistema do microsserviço.
+- **Spring AI (v2.0)**:
+  - `ChatClient`: cliente de alto nível para gerenciar mensagens e registrar ferramentas.
+  - `TranscriptionModel`: integração com o **Whisper** para áudio-para-texto.
+  - `TextToSpeechModel`: integração com **OpenAI TTS** para texto-para-fala.
+  - `@Tool` e `@ToolParam`: mapeamento declarativo de use cases Java como funções para a LLM.
+- **Spring Data JPA & Hibernate**: persistência relacional.
+- **H2 Database**: banco em memória para desenvolvimento e testes ágeis.
+- **MySQL 9**: suporte a banco relacional em produção.
+- **Docker Compose**: orquestração do banco de dados local.
+- **Lombok**: redução de boilerplate.
+- **JUnit 5, AssertJ & Mockito**: suíte de testes unitários e de integração.
+- **Gradle**: gerenciamento de dependências e build.
+
+---
+
+## 🧪 Como testar o fluxo principal
+
+### 1. Testando via comando de voz (Áudio ➔ IA ➔ Áudio)
+Envie um dos arquivos de teste já incluídos no projeto em `src/test/resources/audio/`:
+
 ```bash
 curl -X POST "http://localhost:8080/transactions/ai" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@src/test/resources/audio/recording-1.m4a" \
   --output resposta.mp3
 ```
+*O arquivo `resposta.mp3` gerado conterá a voz da IA confirmando o registro da transação.*
 
-### 2. Chat em texto com o assistente inteligente
-Interage com a IA via texto, disparando as mesmas ferramentas e retornando JSON:
+### 2. Testando via texto com Tool Calling
+Criar uma despesa via linguagem natural:
 ```bash
 curl -X POST "http://localhost:8080/transactions/ai/chat" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Gastei 150 reais no mercado fazendo compras da semana"}'
+  -d '{"message": "Gastei 120 reais no restaurante italiano ontem à noite"}'
 ```
 
+Consultar o balanço com a nova tool:
 ```bash
 curl -X POST "http://localhost:8080/transactions/ai/chat" \
   -H "Content-Type: application/json" \
-  -d '{"message": "Quanto eu já gastei até agora e qual foi a categoria mais cara?"}'
+  -d '{"message": "Qual é o meu total de gastos até agora e qual categoria gastei mais?"}'
 ```
 
-### 3. Obter resumo financeiro consolidado
+### 3. Consultar o resumo financeiro estruturado via REST
 ```bash
 curl -X GET "http://localhost:8080/transactions/summary"
 ```
-**Exemplo de Resposta:**
-```json
-{
-  "totalAmount": 230.0,
-  "totalTransactions": 2,
-  "categoryBreakdown": {
-    "GROCERIES": 150.0,
-    "PHARMA": 80.0
-  },
-  "highestExpenseCategory": "GROCERIES"
-}
-```
 
-### 4. Listar todas as transações
-```bash
-curl -X GET "http://localhost:8080/transactions"
-```
-
-### 5. Consultar transações por categoria
-Categorias disponíveis: `GROCERIES`, `PHARMA`, `AUTO`, `LEISURE`, `UTILITIES`, `EDUCATION`, `OTHER`.
-```bash
-curl -X GET "http://localhost:8080/transactions/GROCERIES"
-```
-
-### 6. Criar transação manualmente (REST)
-```bash
-curl -X POST "http://localhost:8080/transactions" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "description": "Tanque cheio de gasolina",
-    "category": "AUTO",
-    "amount": 220
-  }'
-```
-
----
-
-## 🧪 Testes Automatizados
-
-O projeto conta com testes unitários cobrindo regras de negócio, use cases e endpoints HTTP, além de testes de integração com os modelos da OpenAI:
-
-Executar a suíte de testes:
+### 4. Rodar os testes automatizados
+Para executar todos os testes da aplicação:
 ```bash
 ./gradlew test
 ```
 
-> Os testes de integração reais (`ToolCallingIT`, `OpenAiTranscriptionModelIT`, etc.) usam arquivos de áudio reais localizados em `src/test/resources/audio/` e são ativados automaticamente quando a variável de ambiente `OPENAI_API_KEY` estiver preenchida.
-
 ---
 
-## 💡 Evoluções Implementadas em Relação à Base
+## 🧠 O que aprendi durante o desafio
 
-1. **Novas ferramentas de IA via Tool Calling:**
-   - `get-balance-summary`: cálculo em tempo real do total gasto e divisão por categorias.
-   - `list-all-transactions`: listagem completa de transações acessível pelo agente.
-2. **Endpoint de Chat em Texto (`/transactions/ai/chat`):** permite testar e integrar com facilidade sem depender de microfone.
-3. **Validações e Tratamento de Erros:** validação de valores positivos, descrições não vazias e `GlobalExceptionHandler` padronizando respostas de erro em JSON.
-4. **Suporte H2 + MySQL:** inicialização imediata com banco em memória sem dependência obrigatória de containers para rodar.
-5. **Categorização Enriquecida:** descrições detalhadas nas categorias para orientar o modelo de linguagem na classificação contextual dos gastos.
-6. **Suíte Completa de Testes:** testes com Mockito, AssertJ e MockMvc.
+1. **Separação clara entre IA e Regras de Negócio:**
+   Entendi na prática que a IA generativa não deve substituir a arquitetura da aplicação. O modelo atua como uma interface inteligente de interpretação e orquestração, enquanto as regras de negócio, cálculos e validações continuam isoladas nos casos de uso (`application`) e entidades (`domain`).
+
+2. **Poder do Tool Calling (Function Calling):**
+   Compreendi como transformar métodos Java comuns em ferramentas que a LLM decide quando e com quais parâmetros chamar. Isso resolve o problema de alucinação, pois o modelo delega ações reais para código determinístico.
+
+3. **Pipelines Multimodais com Spring AI:**
+   Foi muito enriquecedor ver o fluxo de ponta a ponta funcionando: entrada de áudio não estruturado (Whisper STT) ➔ processamento de linguagem natural e raciocínio (ChatClient) ➔ persistência em banco relacional ➔ resposta sintetizada em áudio de volta para o cliente (TTS).
+
+4. **Resiliência e DX (Developer Experience):**
+   A importância de planejar um projeto para que qualquer pessoa consiga rodar localmente sem fricção (usando H2 em memória como fallback e testes unitários com mocks que não dependem obrigatoriamente de créditos de API pagos para validar o build).
 
 ---
 
 ## 📄 Licença
 
-Este projeto é distribuído sob a licença [MIT](LICENSE).
+Distribuído sob a licença [MIT](LICENSE).
